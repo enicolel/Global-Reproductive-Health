@@ -1,0 +1,495 @@
+---
+title: "Final-Project"
+author: "Erica Nicolelli"
+format: docx
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(ggsci)
+library(jsonlite)
+library(scales)
+
+data = read_csv("~/Desktop/Data Science/AIU All Women Dataset.csv")
+
+region_colors = c("Europe" = "orange",
+                "Asia" = "olivedrab1",    
+                "Africa" = "darkblue",    
+                "Oceania" = "cyan3",    
+                "Latin America & the Caribbean" = "magenta")
+
+gdp = read_csv("1960-2024-gdp-dataset.csv")
+
+religion_data = read_csv("WRP_national.csv")
+
+gov = read.csv("political-regime.csv")
+
+happiness_data = read_csv("World Happiness Data 2023(Sheet1).csv")
+
+```
+
+AIU All Women Dataset.csv – <https://www.guttmacher.org/public-use-datasets> : a subset of source data, intermediary data and final indicators at the country level for women aged 15–49
+
+GDP Dataset - <https://data.worldbank.org/indicator/NY.GDP.MKTP.CD?view=map>
+
+Religion Dataset - <https://correlatesofwar.org/data-sets/world-religion-data/>
+
+Gov Dataset - <https://ourworldindata.org/grapher/political-regime>
+
+Happiness Dataset - Emailed excel file
+
+Marriage Age Dataset - Not included – Future Exploration
+
+### Quick Stats
+
+```{r}
+avg_wra = mean(data$wra, na.rm = TRUE) 
+avg_pct_currentlymarried = mean(data$pct_currentlymarried, na.rm = TRUE) * 100
+avg_pct_formerlymarried = mean(data$pct_currentlymarried, na.rm = TRUE) * 100
+avg_pct_nevermarried = mean(data$pct_currentlymarried, na.rm = TRUE) * 100
+```
+
+### % of ALL Unintended Pregnancies
+
+```{r}
+# Percent of Unplanned Pregnancies 
+data_pct_upreg = data %>%
+  filter(!is.na(pct_upreg)) %>%
+  arrange(pct_upreg) %>%
+  mutate(country = factor(country, levels = unique(country)))
+
+ggplot(data_pct_upreg, aes(x = country, y = pct_upreg, color = region, fill = region)) +
+  geom_point(size = 3) +
+  scale_color_manual(values = region_colors) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1)) +
+  labs(x = "Country",
+       y = "Percent of Pregnancies That Are Unplanned",
+       title = "Unplanned Pregnancy Percentages by Country",
+       color = "Region",
+       fill = "Region") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+ 
+
+low_pct_upreg = data %>%
+  filter(!is.na(pct_upreg)) %>%
+  arrange(pct_upreg) %>%
+  slice(1) %>%
+  select(country, pct_upreg)
+
+high_pct_upreg = data %>%
+  filter(!is.na(pct_upreg)) %>%
+  arrange(desc(pct_upreg)) %>%
+  slice(1) %>%
+  select(country, pct_upreg)
+
+low_pct_upreg 
+high_pct_upreg
+
+# Percent of Unplanned Pregnancies by WRA
+data_upreg_wra = data %>%
+  filter(!is.na(pct_upreg), !is.na(wra)) %>%
+  mutate(wra = as.numeric(wra))
+
+ggplot(data_upreg_wra, aes(x = wra, y = pct_upreg * 100, color = region)) +
+  geom_point(size = 3, alpha = 0.8) +
+  scale_x_log10(labels = comma_format(accuracy = 1)) +
+  scale_y_continuous(breaks = seq(0, 100, by = 10)) +
+  scale_color_manual(values = region_colors) +
+  labs(x = "Women of Reproductive Age",
+       y = "Percent of Unintended Pregnancies",
+       title = "Unplanned Pregnancy Percentages For Women From 15-49", 
+       color = "Region") +
+  theme_minimal()
+
+plot_region_pct_upreg = function(region_name) {
+  data %>%
+    filter(region == region_name, !is.na(pct_upreg)) %>%  # Remove NA values for pct_upreg
+    mutate(country = factor(country, levels = country[order(-pct_upreg)])) %>%
+    ggplot(aes(x = country, y = pct_upreg, color = country, fill = country)) +
+    geom_point(size = 3) +
+    labs(title = paste("Unplanned Pregnancy Percentages in", region_name),
+         x = "Country",
+         y = "Percent of Pregnancies That Are Unplanned",
+         color = "Region") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.position = "none") }
+
+#plot_region_pct_upreg("Asia")
+#plot_region_pct_upreg("Europe")
+#plot_region_pct_upreg("Latin America & the Caribbean")
+#plot_region_pct_upreg("Africa")
+#plot_region_pct_upreg("Oceania")
+```
+
+### % of Unintended Pregnancies By Contraceptive Need and Use
+
+Giving an overview of what women are using for contraception
+
+```{r}
+# Overall Average
+avg_uni_prg_contraceptive = data %>%
+  summarise(LARCSTER = mean(pct_upreg_larcster, na.rm = TRUE),
+            SARC = mean(pct_upreg_sarc, na.rm = TRUE),
+            TRAD = mean(pct_upreg_trad, na.rm = TRUE),
+            NOUSE = mean(pct_upreg_nouse, na.rm = TRUE)) %>%
+            pivot_longer(cols = everything(), names_to = "Method", values_to = "Percentage")
+
+contraceptive_colors = c("LARCSTER" = "orange",
+                         "SARC" = "orangered",    
+                         "TRAD" = "steelblue",    
+                         "NOUSE" = "green")
+
+ggplot(avg_uni_prg_contraceptive, aes(x = Method, y = Percentage, fill = Method)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(round(Percentage, 4)*100, "%")), vjust = -0.3, size = 4) + 
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_x_discrete(labels = c(
+    "LARCSTER" = "Using Long-Acting Reversible \nMethod and Sterilization", 
+    "SARC"     = "Using Short Term \nReversible Method", 
+    "TRAD"     = "Unmet Need Using \nTraditional Method", 
+    "NOUSE"    = "An Unmet Need Using \nNo Method")) + 
+  scale_fill_manual(values = contraceptive_colors) +
+  labs(x = "Contraceptive Method", y = "Average Percentage", 
+       title = "Contraception Use By Women In Unintended Pregnancies") +
+  theme_minimal() +
+  theme(axis.title.x = element_text(margin = margin(t = 10)), 
+        legend.position = "none")
+```
+
+```{r}
+# Regional graphs for each of the 4 contraception methods
+avg_uni_prg_contraceptive_region = data %>%
+  group_by(region) %>%
+  summarise(LARCSTER = mean(pct_upreg_larcster, na.rm = TRUE),
+            SARC = mean(pct_upreg_sarc, na.rm = TRUE),
+            TRAD = mean(pct_upreg_trad, na.rm = TRUE),
+            NOUSE = mean(pct_upreg_nouse, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(LARCSTER, SARC, TRAD, NOUSE),
+               names_to = "Method",
+               values_to = "Percentage")
+
+plot_region = function(region_name) {
+  ggplot(filter(avg_uni_prg_contraceptive_region, region == region_name), aes(x = Method, y = Percentage, fill = Method)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = paste0(round(Percentage, 4)*100, "%")), 
+              vjust = -0.3, size = 4) +
+    scale_x_discrete(labels = c("LARCSTER" = "Using Long-Acting Reversible \nMethod and Sterilization", 
+                                "SARC" = "Using Short Term \nReversible Method", 
+                                "TRAD" = "Unmet Need Using \nTraditional Method", 
+                                "NOUSE" = "An Unmet Need Using \nNo Method")) +
+    scale_fill_manual(values = contraceptive_colors) +
+    scale_y_continuous(labels = percent_format(accuracy = 1)) +
+    labs(x = "Contraceptive Method", 
+         y = "Average Percentage", 
+         title = paste("Contraception Use By Women For Unintended \nPregnancies in", region_name)) +
+    theme_minimal() +
+    theme(axis.title.x = element_text(margin = margin(t = 10)),
+          legend.position = "none") }
+
+plot_region("Asia")
+plot_region("Europe")
+plot_region("Africa")
+plot_region("Latin America & the Caribbean")
+plot_region("Oceania")
+```
+
+```{r}
+# Individual contraception method graphs by region (region x-axis) 
+contraception_titles = c("LARCSTER" = "Using Long-Acting Reversible Method and Sterilization By Region", 
+                         "SARC" = "Using Short Term Reversible Method By Region", 
+                          "TRAD" = "Unmet Need Using Traditional Method By Region", 
+                          "NOUSE" = "An Unmet Need Using No Method By Region")
+
+plot_method_by_region = function(method_name) {
+  method_data = avg_uni_prg_contraceptive_region %>%
+  filter(Method == method_name)
+  ggplot(method_data, aes(x = region, y = Percentage, fill = region)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = paste0(round(Percentage * 100, 2), "%")),
+              vjust = -0.3, size = 4) +
+    scale_y_continuous(labels = percent_format(accuracy = 1)) +
+    scale_fill_manual(values = region_colors) +
+    labs(x = "Region",
+         y = "Average Percentage",
+         title = contraception_titles[method_name],
+         subtitle = "For Women Who Experienced Unintended Pregnancies") +
+    theme_minimal() +
+    theme(axis.title.x = element_text(margin = margin(t = 10)),
+          legend.position = "none") }
+
+plot_method_by_region("SARC")
+plot_method_by_region("LARCSTER")
+plot_method_by_region("TRAD")
+plot_method_by_region("NOUSE")
+```
+
+### Intended vs Unintended
+
+```{r}
+# Function
+allpreg_no_in_1 = data %>%
+  select(country, region, inneed, noneed, allpreg) %>%  # include region here
+  drop_na() %>%
+  pivot_longer(cols = c(inneed, noneed), names_to = "need_status", values_to = "count") %>%
+  mutate(percentage = (count / allpreg) * 100)
+
+plot_pregnancy_by_region = function(data, selected_region) {
+  allpreg_no_in_1 = data %>%
+    select(country, region, inneed, noneed, allpreg) %>%
+    drop_na() %>%
+    filter(region == selected_region) %>%
+    pivot_longer(cols = c(inneed, noneed), names_to = "need_status", values_to = "count") %>%
+    mutate(need_status = recode(need_status,
+                           "inneed" = "Planned",
+                           "noneed" = "Unplanned"),
+           percentage = (count / allpreg) * 100)
+  ggplot(allpreg_no_in_1, aes(x = reorder(country, -allpreg), y = percentage, fill = need_status)) +
+    geom_bar(stat = "identity") +
+    labs(x = "Countries",
+         y = "Number of Pregnancies",
+         fill = "Pregnancy Intention",
+         title = paste("Pregnancy Intention in", selected_region)) + 
+    scale_fill_manual(values = c("noneed" = "lightblue", "inneed" = "darkblue"), 
+                    labels = c("noneed" = "Unplanned", "inneed" = "Planned")) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          axis.title.x = element_blank())}
+
+#plot_pregnancy_by_region(data, "Europe")
+#plot_pregnancy_by_region(data, "Africa")
+#plot_pregnancy_by_region(data, "Asia")
+#plot_pregnancy_by_region(data, "Oceania")
+#plot_pregnancy_by_region(data, "Latin America & the Caribbean")
+```
+
+```{r}
+# Facet Wrap
+allpreg_no_in_2 = data %>%
+  select(country, region, inneed, noneed, allpreg) %>%  # include region here
+  drop_na() %>%
+  pivot_longer(cols = c(inneed, noneed), names_to = "need_status", values_to = "count") %>%
+  mutate(percentage = (count / allpreg) * 100)
+
+ggplot(allpreg_no_in_2, aes(x = reorder(country, -allpreg), y = percentage, fill = need_status)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ region, scales = "free_x") +
+  labs(x = "Countries",
+       y = "Number of Pregnancies",
+       fill = "Intention",
+       title = "Regional Pregnancy Intention") +
+  scale_fill_manual(values = c("noneed" = "lightblue", "inneed" = "darkblue"), 
+                    labels = c("noneed" = "Unplanned", "inneed" = "Planned")) +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+
+unplanned = preg_summary %>%
+  filter(noneed > inneed) %>%
+  nrow()
+
+planned = preg_summary %>%
+  filter(inneed > noneed) %>%
+  nrow()
+
+unplanned
+planned
+```
+
+### Type of Government
+
+```{r}
+# 0 = closed autocracy, 1 = electorial autocracy, 2 = electorial democracy, 3 = liberal democracy
+gov_data = data %>% inner_join(gov, by = c("country" = "Entity"))
+
+gov_data = gov_data %>%
+  mutate(regime_type = case_when(
+         Political.regime == 0 ~ "Closed Autocracy",
+         Political.regime == 1 ~ "Electoral Autocracy",
+         Political.regime == 2 ~ "Electoral Democracy",
+         Political.regime == 3 ~ "Liberal Democracy",
+         TRUE ~ "Unknown"))
+
+# Comparing % NOUSE to Gov Type
+ggplot(gov_data, aes(x = regime_type, y = pct_upreg_nouse)) +
+  geom_boxplot(fill = "cadetblue", color = "black") +
+  scale_y_continuous(labels = percent_format(accuracy = 1), breaks = seq(0, 1, by = 0.05)) +
+  labs(x = "Government Type",
+       y = "Percentage of Unintended Pregnancies\nBy Unmet Contraceptive Need",
+       title = "Percentage of Unintended Pregnancies in Countries By Governmental Control",
+       subtitle = "Based on 2024 GDP Data") +
+  theme_minimal() +
+  theme(axis.title.x = element_blank())
+```
+
+### Level of Countries Religion – 2010
+
+```{r}
+religion_joined = religion_data %>%
+  filter(year == 2010) %>%
+  mutate(other = shntgenpct + bahgenpct + taogenpct + jaingenpct +
+         confgenpct + syncgenpct + anmgenpct + othrgenpct ) %>%
+  select(name, chrstgenpct, islmgenpct, judgenpct, budgenpct,
+         hindgenpct, nonreligpct, othrgenpct) %>%
+  pivot_longer(cols = -name,
+               names_to = "religion",
+               values_to = "percentage")
+
+nouse_data = data %>%
+  select(Code = country, pct_upreg_nouse) %>%
+  mutate(religion = "Unmet Need (No Method)",
+         percentage = pct_upreg_nouse)
+
+religion_full = bind_rows(religion_joined, nouse_data) %>%
+  inner_join(gov_data, by = c("name" = "Code")) %>%
+  mutate(regime_type = case_when(
+         Political.regime == 0 ~ "Closed Autocracy",
+         Political.regime == 1 ~ "Electoral Autocracy",
+         Political.regime == 2 ~ "Electoral Democracy",
+         Political.regime == 3 ~ "Liberal Democracy",
+         TRUE ~ "Unknown"),
+    religion = recode(religion,
+                      chrstgenpct = "Christian",
+                      islmgenpct = "Islam",
+                      judgenpct = "Jewish",
+                      budgenpct = "Buddhist",
+                      hindgenpct = "Hindu",
+                      nonreligpct = "Not Religious",
+                      othrgenpct = "Other Religion"))
+
+ggplot(religion_full, aes(x = regime_type, y = percentage, fill = religion)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(x = "Government Type",
+       y = "Percentages",
+       fill = "Category",
+       title = "Religious Affliation of Unplanned Pregancies with \nUnmet Need By Government Type",
+       subtitle = "Religion Data is From 2010") +
+  theme_minimal() +
+  theme(axis.title.x = element_blank())
+```
+
+### World of Happiness
+
+```{r}
+# Original Dataset
+top = data %>%
+  mutate(prop_unplanned = upreg / allpreg) %>%
+  filter(!is.na(prop_unplanned), allpreg > 0) %>%
+  arrange(desc(prop_unplanned)) %>%
+  slice_head(n = 5) %>%
+  mutate(group = "Top")
+
+bottom = data %>%
+  mutate(prop_unplanned = upreg / allpreg) %>%
+  filter(!is.na(prop_unplanned), allpreg > 0) %>%
+  arrange(prop_unplanned) %>%
+  slice_head(n = 5) %>%
+  mutate(group = "Bottom")
+
+bind_rows(top, bottom) %>%
+  ggplot(aes(x = reorder(country, -prop_unplanned), y = prop_unplanned, fill = country)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  geom_text(aes(label = scales::percent(prop_unplanned, accuracy = 1)), 
+            vjust = -0.2, size = 3) +
+  facet_wrap(~ group, scales = "free_x") +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 1.05)) +
+  labs(title = "Percentage of Unplanned Pregnancies by Top and Bottom 5 Countries",
+       x = "Country",
+       y = "Unplanned Pregnancy Percentage") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.x = element_blank())
+
+# Top 5 countries with the highest unplanned pregnancies happiness rating verse lowest 
+top_unplanned = data %>%
+  mutate(prop_unplanned = upreg / allpreg) %>%
+  filter(!is.na(prop_unplanned), allpreg > 0) %>%
+  arrange(desc(prop_unplanned)) %>%
+  slice_head(n = 7) %>%  
+  pull(country)
+
+bottom_unplanned = data %>%
+  mutate(prop_unplanned = upreg / allpreg) %>%
+  filter(!is.na(prop_unplanned), allpreg > 0) %>%
+  arrange(prop_unplanned) %>%
+  slice_head(n = 5) %>%
+  pull("country")
+
+happiness_data = rename(happiness_data, country = `Country name`)
+happiness_data = rename(happiness_data, life = 'Life Ladder')
+
+happiness_data = happiness_data %>%
+  mutate(country = recode(country,
+                               "Eswatini" = "Swaziland",
+                               "Cape Verde" = "Cabo Verde"))
+
+# Exclusion of Saint Lucia (not in happiness dataset)
+happiness_data %>%
+  filter(country %in% c(top_unplanned, bottom_unplanned)) %>%
+  mutate(group = case_when(
+         country %in% top_countries ~ "Top",
+         country %in% bottom_countries ~ "Bottom")) %>%
+  ggplot(aes(x = year, y = life, color = country)) +
+  geom_line(size = 0.5) +
+  facet_wrap(~ group) + 
+  labs(title = "Happiness Over Time in Countries with High and Low Unplanned Pregnancy Rates",
+       subtitle = "World Happiness Data From 2023",
+       x = "Year",
+       y = "Life Ladder",
+       color = "Country") +
+  theme_minimal() +
+  theme(axis.title.x = element_text(margin = margin(t = 10)))
+```
+
+### GDP
+
+```{r}
+gdp_data = gdp %>%
+  select(country = `Country Name`, gdp = `2019`) %>%
+  filter(!is.na(gdp)) %>%
+  inner_join(data %>% select(country, pct_upreg_nouse, region), by = "country")
+
+ggplot(gdp_data, aes(x = gdp, y = pct_upreg_nouse, color = region)) +
+  geom_point(alpha = 0.7, size = 3) +
+  geom_smooth(method = "lm", se = TRUE, color = "black", linetype = "dashed") + 
+  scale_x_log10(labels = scales::comma) +
+  scale_color_manual(values = region_colors) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(x = "GDP per Capita (log scale)",
+       y = "Percent of Unmet Contraceptive Need From \nUnplanned Pregnancies",
+       title = "Percent of Unmet Contraceptive Need By Country GDP",
+       subtitle = "GDP Data From 2019",
+       color = "Region") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Top and Bottom 5 Countries 
+gdp_data = gdp_data %>%
+  mutate(highlight = case_when(country %in% top_unplanned ~ "Highest % Unplanned",
+                               country %in% bottom_unplanned ~ "Lowest % Unplanned",
+                               TRUE ~ "Other"))
+
+ggplot(gdp_data, aes(x = gdp, y = pct_upreg_nouse)) +
+  geom_point(color = "black", size = 2) + 
+  geom_point(data = subset(gdp_data, highlight != "Other"),
+             aes(color = highlight), size = 4) +  
+  scale_color_manual(values = c("Highest % Unplanned" = "purple",
+                                "Lowest % Unplanned" = "orange")) +
+  geom_smooth(method = "lm", se = TRUE, color = "black", linetype = "dashed") +
+  scale_x_log10(labels = scales::comma_format(accuracy = 1),
+                breaks = scales::trans_breaks("log10", function(x) 10^x)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(x = "GDP per Capita (log scale)",
+       y = "Percent of Unplanned Pregnancies \nFrom Unmet Need",
+       title = "Countries With Highest and Lowest Unmet Contraceptive Need By GDP",
+       subtitle = "GDP Data From 2019", 
+       color = "Country GDP Rank") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
